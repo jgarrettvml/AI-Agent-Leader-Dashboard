@@ -1,60 +1,68 @@
 import React from 'react'
 import { Box, Table, Thead, Tbody, Tr, Th, Td, Input, Select, HStack, Text, Center, Spinner } from '@chakra-ui/react'
 import { useState, useEffect } from 'react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../supabase'
 
 export default function UserActivity() {
   const [activities, setActivities] = useState([])
+  const [dailyStats, setDailyStats] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [sortBy, setSortBy] = useState('created_at')
 
   useEffect(() => {
-    // Test Supabase connection immediately
-    testConnection()
     fetchActivities()
-  }, [sortBy])
+    fetchDailyStats()
+  }, [])
 
-  async function testConnection() {
+  async function fetchDailyStats() {
     try {
-      console.log('Testing Supabase connection...')
+      // Get the date 7 days ago
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      
       const { data, error } = await supabase
         .from('user_activity')
-        .select('count')
-      
-      if (error) {
-        console.error('Connection test error:', error)
-      } else {
-        console.log('Connection successful, row count:', data)
+        .select('created_at')
+        .gte('created_at', sevenDaysAgo.toISOString())
+
+      if (error) throw error
+
+      // Process data for the chart
+      const dailyCounts = {}
+      data.forEach(activity => {
+        const date = new Date(activity.created_at).toLocaleDateString()
+        dailyCounts[date] = (dailyCounts[date] || 0) + 1
+      })
+
+      // Create array for last 7 days
+      const stats = []
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date()
+        date.setDate(date.getDate() - i)
+        const dateStr = date.toLocaleDateString()
+        stats.push({
+          date: dateStr,
+          count: dailyCounts[dateStr] || 0
+        })
       }
-    } catch (err) {
-      console.error('Connection test failed:', err)
+
+      setDailyStats(stats)
+    } catch (error) {
+      console.error('Error fetching daily stats:', error)
     }
   }
 
   async function fetchActivities() {
     try {
       setLoading(true)
-      console.log('Fetching user activities...')
-      
-      // Log the query we're about to make
-      console.log('Query:', {
-        table: 'user_activity',
-        sort: sortBy,
-        direction: 'desc'
-      })
-
       const { data, error } = await supabase
         .from('user_activity')
         .select('*')
         .order(sortBy, { ascending: false })
 
-      if (error) {
-        console.error('Fetch error:', error)
-        return
-      }
-
-      console.log('Fetched data:', data)
+      if (error) throw error
       setActivities(data || [])
     } catch (error) {
       console.error('Error:', error)
@@ -63,11 +71,6 @@ export default function UserActivity() {
     }
   }
 
-  // Log whenever activities state changes
-  useEffect(() => {
-    console.log('Activities state updated:', activities)
-  }, [activities])
-
   const filteredActivities = activities.filter(activity =>
     activity.action?.toLowerCase().includes(filter.toLowerCase()) ||
     activity.user_id?.toLowerCase().includes(filter.toLowerCase()) ||
@@ -75,13 +78,30 @@ export default function UserActivity() {
     activity.country?.toLowerCase().includes(filter.toLowerCase())
   )
 
-  // Log whenever filtered results change
-  useEffect(() => {
-    console.log('Filtered activities:', filteredActivities)
-  }, [filteredActivities])
-
   return (
     <Box>
+      {/* Activity Graph */}
+      <Box mb={6} bg="white" borderRadius="lg">
+        <Text p={4} fontSize="lg" fontWeight="medium">User Activity - Last 7 Days</Text>
+        <Box h="200px" p={4}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={dailyStats}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Line 
+                type="monotone" 
+                dataKey="count" 
+                stroke="#3182CE" 
+                strokeWidth={2}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </Box>
+      </Box>
+
+      {/* Filters */}
       <HStack spacing={4} mb={6}>
         <Input
           placeholder="Filter by action, user, city, or country"
@@ -96,6 +116,7 @@ export default function UserActivity() {
         </Select>
       </HStack>
 
+      {/* Activity Table */}
       {loading ? (
         <Center py={8}>
           <Spinner />
