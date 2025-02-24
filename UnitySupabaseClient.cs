@@ -3,11 +3,12 @@ using UnityEngine.Networking;
 using System.Collections;
 using System.Text;
 using System;
+using System.Collections.Generic;
 
 public class UnitySupabaseClient : MonoBehaviour
 {
     [Header("Supabase Configuration")]
-    [SerializeField] private string supabaseUrl = "YOUR_SUPABASE_URL"; // e.g., "https://your-project.supabase.co"
+    [SerializeField] private string supabaseUrl = "YOUR_SUPABASE_URL";
     [SerializeField] private string supabaseAnonKey = "YOUR_SUPABASE_KEY";
 
     private string aiActivitiesEndpoint;
@@ -32,9 +33,6 @@ public class UnitySupabaseClient : MonoBehaviour
 
         StartCoroutine(PostToSupabase(aiActivitiesEndpoint, JsonUtility.ToJson(activityData)));
     }
-
-    // Example usage:
-    // LogAIActivity("agent_001", "move", "Moved to position (10,5,3)");
     #endregion
 
     #region Leaderboard
@@ -49,8 +47,49 @@ public class UnitySupabaseClient : MonoBehaviour
         StartCoroutine(PostToSupabase(leaderboardEndpoint, JsonUtility.ToJson(scoreData)));
     }
 
-    // Example usage:
-    // SubmitScore("Player1", 1000);
+    // New method to fetch top 10 scores
+    public void GetTopScores(System.Action<List<LeaderboardEntry>> onSuccess, System.Action<string> onError = null)
+    {
+        StartCoroutine(FetchTopScores(onSuccess, onError));
+    }
+
+    private IEnumerator FetchTopScores(System.Action<List<LeaderboardEntry>> onSuccess, System.Action<string> onError)
+    {
+        // Build the query URL with parameters
+        string queryUrl = $"{leaderboardEndpoint}?select=player_name,score,timestamp&order=score.desc&limit=10";
+
+        using (UnityWebRequest request = new UnityWebRequest(queryUrl, "GET"))
+        {
+            request.downloadHandler = new DownloadHandlerBuffer();
+            
+            // Set required headers
+            request.SetRequestHeader("apikey", supabaseAnonKey);
+            request.SetRequestHeader("Authorization", $"Bearer {supabaseAnonKey}");
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"Error fetching leaderboard: {request.error}");
+                onError?.Invoke(request.error);
+            }
+            else
+            {
+                try
+                {
+                    // Parse the JSON array response
+                    string jsonResponse = request.downloadHandler.text;
+                    LeaderboardEntryArray leaderboardArray = JsonUtility.FromJson<LeaderboardEntryArray>("{\"entries\":" + jsonResponse + "}");
+                    onSuccess(new List<LeaderboardEntry>(leaderboardArray.entries));
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Error parsing leaderboard data: {e.Message}");
+                    onError?.Invoke(e.Message);
+                }
+            }
+        }
+    }
     #endregion
 
     private IEnumerator PostToSupabase(string endpoint, string jsonData)
@@ -61,11 +100,10 @@ public class UnitySupabaseClient : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
 
-            // Set required headers
             request.SetRequestHeader("apikey", supabaseAnonKey);
             request.SetRequestHeader("Authorization", $"Bearer {supabaseAnonKey}");
             request.SetRequestHeader("Content-Type", "application/json");
-            request.SetRequestHeader("Prefer", "return=minimal"); // Don't return the inserted row
+            request.SetRequestHeader("Prefer", "return=minimal");
 
             yield return request.SendWebRequest();
 
@@ -96,25 +134,19 @@ public class UnitySupabaseClient : MonoBehaviour
         public string player_name;
         public int score;
     }
-    #endregion
 
-    #region Test Methods
-    // Test methods to verify connection and data posting
-    public void TestAIActivity()
+    [Serializable]
+    public class LeaderboardEntry
     {
-        LogAIActivity(
-            $"test_agent_{DateTime.Now.Ticks}", 
-            "test_action", 
-            $"Test activity at {DateTime.Now.ToLocalTime()}"
-        );
+        public string player_name;
+        public int score;
+        public string timestamp;
     }
 
-    public void TestLeaderboard()
+    [Serializable]
+    private class LeaderboardEntryArray
     {
-        SubmitScore(
-            $"test_player_{DateTime.Now.Ticks}",
-            UnityEngine.Random.Range(100, 1000)
-        );
+        public LeaderboardEntry[] entries;
     }
     #endregion
 }

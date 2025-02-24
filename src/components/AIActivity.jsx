@@ -11,21 +11,6 @@ export default function AIActivity() {
 
   useEffect(() => {
     fetchActivities()
-    
-    // Set up real-time subscription
-    const subscription = supabase
-      .channel('ai_activities_channel')
-      .on('postgres_changes', 
-          { event: 'INSERT', schema: 'public', table: 'ai_activities' },
-          payload => {
-            setActivities(current => [payload.new, ...current])
-          }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
   }, [sortBy])
 
   async function fetchActivities() {
@@ -39,7 +24,7 @@ export default function AIActivity() {
       if (error) throw error
       setActivities(data || [])
     } catch (error) {
-      console.error('Error fetching activities:', error)
+      console.error('Error:', error)
     } finally {
       setLoading(false)
     }
@@ -72,7 +57,7 @@ export default function AIActivity() {
         </Center>
       ) : filteredActivities.length === 0 ? (
         <Center py={8}>
-          <Text>No activities found</Text>
+          <Text>No AI activities found</Text>
         </Center>
       ) : (
         <Box overflowX="auto">
